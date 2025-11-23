@@ -1,0 +1,152 @@
+<!doctype html>
+
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Pixel Walk Game</title>
+  <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+  <style>
+    html,body{height:100%;margin:0;background:#111;color:#ddd;font-family:system-ui,Segoe UI,Roboto,Helvetica,Arial}
+    #gameWrap{display:grid;place-items:center;height:100%;padding:0;box-sizing:border-box}
+    canvas{background:#7ec0ee;image-rendering:pixelated;border:0;}
+    .joy-wrap{position:fixed;left:12px;bottom:12px;width:140px;height:140px;touch-action:none;display:none;z-index:20}
+    .joy-base{position:absolute;left:0;top:0;width:100%;height:100%;background:rgba(0,0,0,0.14);border-radius:50%}
+    .joy-stick{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:56px;height:56px;border-radius:50%;background:rgba(255,255,255,0.9);box-shadow:0 4px 12px rgba(0,0,0,0.4)}
+    @media (max-width:900px){.joy-wrap{display:block}}
+  </style>
+</head>
+<body>
+  <div id="gameWrap"><canvas id="game" width="640" height="480"></canvas></div>
+  <div class="joy-wrap" id="joyWrap">
+    <div class="joy-base" id="joyBase"></div>
+    <div class="joy-stick" id="joyStick"></div>
+  </div><script>
+const SPRITE_SRC = "https://i.ibb.co/0DxKpm2/char.png"; // direct PNG
+
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+ctx.imageSmoothingEnabled = false;
+
+const V_WIDTH = 320;
+const V_HEIGHT = 240;
+const buffer = document.createElement('canvas');
+buffer.width = V_WIDTH;
+buffer.height = V_HEIGHT;
+const bctx = buffer.getContext('2d');
+bctx.imageSmoothingEnabled = false;
+
+function fitCanvas() {
+  const w = window.innerWidth;
+  const h = window.innerHeight;
+  const scale = Math.min(w / V_WIDTH, h / V_HEIGHT);
+  canvas.style.width = V_WIDTH * scale + 'px';
+  canvas.style.height = V_HEIGHT * scale + 'px';
+}
+window.addEventListener('resize', fitCanvas);
+fitCanvas();
+
+const box = { x: 20, y: 20, w: V_WIDTH - 40, h: V_HEIGHT - 40 };
+
+const player = { x: V_WIDTH/2, y: V_HEIGHT/2, w: 14, h: 16, speed: 1.6, vx:0, vy:0 };
+
+const sprite = new Image();
+sprite.crossOrigin = 'anonymous';
+sprite.src = SPRITE_SRC;
+let spriteReady = false;
+sprite.onload = () => spriteReady = true;
+
+const keys = { up:false, down:false, left:false, right:false };
+window.addEventListener('keydown', e => {
+  if(e.key==='w'||e.key==='ArrowUp') keys.up=true;
+  if(e.key==='s'||e.key==='ArrowDown') keys.down=true;
+  if(e.key==='a'||e.key==='ArrowLeft') keys.left=true;
+  if(e.key==='d'||e.key==='ArrowRight') keys.right=true;
+});
+window.addEventListener('keyup', e => {
+  if(e.key==='w'||e.key==='ArrowUp') keys.up=false;
+  if(e.key==='s'||e.key==='ArrowDown') keys.down=false;
+  if(e.key==='a'||e.key==='ArrowLeft') keys.left=false;
+  if(e.key==='d'||e.key==='ArrowRight') keys.right=false;
+});
+
+const joyWrap = document.getElementById('joyWrap');
+const joyStick = document.getElementById('joyStick');
+let joyActive = false;
+let joyCenter = {x:0,y:0};
+let joyPos = {x:0,y:0};
+const maxR = 48;
+
+function getTouch(e){ return (e.touches? e.touches[0]: e); }
+function startJoy(e){
+  joyActive=true;
+  const r = joyWrap.getBoundingClientRect();
+  joyCenter={x:r.left+r.width/2,y:r.top+r.height/2};
+  moveJoy(e);
+}
+function moveJoy(e){
+  if(!joyActive) return;
+  const p=getTouch(e);
+  const dx=p.clientX-joyCenter.x;
+  const dy=p.clientY-joyCenter.y;
+  const dist=Math.hypot(dx,dy);
+  const ang=Math.atan2(dy,dx);
+  const r=Math.min(dist,maxR);
+  joyPos.x=(Math.cos(ang)*r)/maxR;
+  joyPos.y=(Math.sin(ang)*r)/maxR;
+  joyStick.style.transform=`translate(calc(-50% + ${joyPos.x*40}px), calc(-50% + ${joyPos.y*40}px))`;
+  e.preventDefault();
+}
+function endJoy(){ joyActive=false; joyPos={x:0,y:0}; joyStick.style.transform="translate(-50%,-50%)"; }
+
+joyWrap.addEventListener('touchstart',startJoy,{passive:false});
+joyWrap.addEventListener('touchmove',moveJoy,{passive:false});
+joyWrap.addEventListener('touchend',endJoy);
+
+function update(){
+  let vx=0,vy=0;
+  if(keys.up) vy-=1;
+  if(keys.down) vy+=1;
+  if(keys.left) vx-=1;
+  if(keys.right) vx+=1;
+  vx+=joyPos.x;
+  vy+=joyPos.y;
+  const m=Math.hypot(vx,vy);
+  if(m>0){ vx/=m; vy/=m; }
+  player.x+=vx*player.speed;
+  player.y+=vy*player.speed;
+  const hw=player.w/2, hh=player.h/2;
+  player.x=Math.max(box.x+hw,Math.min(box.x+box.w-hw,player.x));
+  player.y=Math.max(box.y+hh,Math.min(box.y+box.h-hh,player.y));
+}
+
+function render(){
+  bctx.fillStyle="#d7c1e1";
+  bctx.fillRect(box.x,box.y,box.w,box.h);
+
+  const plankH=6;
+  for(let y=0;y<box.h;y+=plankH){
+    bctx.fillStyle=(y%(plankH*2)==0)?"#b7865b":"#a8744f";
+    bctx.fillRect(box.x,box.y+y,box.w,plankH);
+  }
+
+  bctx.strokeStyle="#8b5a2b";
+  bctx.lineWidth=3;
+  bctx.strokeRect(box.x+1,box.y+1,box.w-2,box.h-2);
+
+  if(spriteReady){
+    bctx.drawImage(sprite, player.x-player.w, player.y-player.h, player.w*2, player.h*2);
+  } else {
+    bctx.fillStyle="#000";
+    bctx.fillRect(player.x-7, player.y-8, 14,16);
+  }
+
+  ctx.drawImage(buffer,0,0,canvas.width,canvas.height);
+}
+
+function loop(){ update(); render(); requestAnimationFrame(loop); }
+loop();
+</script>
+</body>
+</html>
