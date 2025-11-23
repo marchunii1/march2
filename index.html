@@ -1,0 +1,250 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Pixel Walk Game</title>
+
+  <style>
+    html,body{
+      height:100%; margin:0;
+      background:#111; color:#ddd;
+      font-family:system-ui,Segoe UI,Roboto;
+      overflow:hidden;
+    }
+    #gameWrap{
+      display:grid;
+      place-items:center;
+      height:100%;
+    }
+    canvas{
+      background:#7ec0ee;
+      image-rendering:pixelated;
+    }
+
+    .joy-wrap{
+      position:fixed;
+      left:20px;
+      bottom:20px;
+      width:160px;
+      height:160px;
+      touch-action:none;
+      display:none;
+      z-index:20;
+    }
+    .joy-base{
+      position:absolute;
+      width:100%; height:100%;
+      background:rgba(255,255,255,0.18);
+      border:3px solid rgba(255,255,255,0.4);
+      border-radius:50%;
+      backdrop-filter: blur(3px);
+    }
+    .joy-stick{
+      position:absolute;
+      width:70px; height:70px;
+      border-radius:50%;
+      background:white;
+      left:50%; top:50%;
+      transform:translate(-50%,-50%);
+      box-shadow:0 4px 12px rgba(0,0,0,0.35);
+    }
+    @media (max-width:900px){
+      .joy-wrap{ display:block; }
+    }
+  </style>
+</head>
+
+<body>
+<div id="gameWrap">
+  <canvas id="game" width="640" height="480"></canvas>
+</div>
+
+<!-- Joystick -->
+<div class="joy-wrap" id="joyWrap">
+  <div class="joy-base"></div>
+  <div class="joy-stick" id="joyStick"></div>
+</div>
+
+<script>
+/* Character PNG */
+const SPRITE_SRC = "https://i.postimg.cc/cLWjhr0S/char.png";
+
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+ctx.imageSmoothingEnabled = false;
+
+/* Internal virtual resolution */
+const V_WIDTH = 320;
+const V_HEIGHT = 240;
+
+const buffer = document.createElement("canvas");
+buffer.width = V_WIDTH;
+buffer.height = V_HEIGHT;
+const bctx = buffer.getContext("2d");
+bctx.imageSmoothingEnabled = false;
+
+/* Fit screen */
+function fitCanvas(){
+  const scale = Math.floor(Math.min(
+    window.innerWidth / V_WIDTH,
+    window.innerHeight / V_HEIGHT
+  ));
+
+  canvas.style.width = V_WIDTH * scale + "px";
+  canvas.style.height = V_HEIGHT * scale + "px";
+}
+window.addEventListener("resize",fitCanvas); fitCanvas();
+
+/* Player with all animation variables */
+const player = {
+  x: V_WIDTH/2,
+  y: V_HEIGHT/2,
+  w: 14,
+  h: 16,
+  speed: 1.6,
+  bounce: 0,
+  bounceSpeed: 0.28,
+  dir: 1 // 1 = right, -1 = left
+};
+
+/* Movement area */
+const box = { x:20, y:20, w:V_WIDTH-40, h:V_HEIGHT-40 };
+
+let spriteReady = false;
+const sprite = new Image();
+sprite.crossOrigin = "anonymous";
+sprite.src = SPRITE_SRC;
+sprite.onload = () => spriteReady = true;
+
+/* Keyboard */
+const keys = { up:0,down:0,left:0,right:0 };
+
+window.addEventListener("keydown",e=>{
+  if(e.key==="w"||e.key==="ArrowUp") keys.up=1;
+  if(e.key==="s"||e.key==="ArrowDown") keys.down=1;
+  if(e.key==="a"||e.key==="ArrowLeft") keys.left=1;
+  if(e.key==="d"||e.key==="ArrowRight") keys.right=1;
+});
+window.addEventListener("keyup",e=>{
+  if(e.key==="w"||e.key==="ArrowUp") keys.up=0;
+  if(e.key==="s"||e.key==="ArrowDown") keys.down=0;
+  if(e.key==="a"||e.key==="ArrowLeft") keys.left=0;
+  if(e.key==="d"||e.key==="ArrowRight") keys.right=0;
+});
+
+/* Joystick */
+const joyStick = document.getElementById("joyStick");
+const joyWrap  = document.getElementById("joyWrap");
+let joyActive=false, joyCenter={x:0,y:0}, joyPos={x:0,y:0};
+const maxR=60;
+
+function getTouch(e){ return e.touches ? e.touches[0] : e; }
+
+joyWrap.addEventListener("touchstart",e=>{
+  joyActive=true;
+  const r=joyWrap.getBoundingClientRect();
+  joyCenter={x:r.left+r.width/2,y:r.top+r.height/2};
+});
+
+joyWrap.addEventListener("touchmove",e=>{
+  if(!joyActive) return;
+  const p=getTouch(e);
+  const dx=p.clientX-joyCenter.x;
+  const dy=p.clientY-joyCenter.y;
+  const dist=Math.min(Math.hypot(dx,dy),maxR);
+  const ang=Math.atan2(dy,dx);
+
+  joyPos.x=(Math.cos(ang)*dist)/maxR;
+  joyPos.y=(Math.sin(ang)*dist)/maxR;
+
+  joyStick.style.transform =
+    `translate(calc(-50% + ${joyPos.x*50}px), calc(-50% + ${joyPos.y*50}px))`;
+
+  e.preventDefault();
+});
+
+joyWrap.addEventListener("touchend",()=>{
+  joyActive=false;
+  joyPos={x:0,y:0};
+  joyStick.style.transform="translate(-50%,-50%)";
+});
+
+/* Update */
+function update(){
+  let vx = (keys.right - keys.left) + joyPos.x;
+  let vy = (keys.down - keys.up) + joyPos.y;
+
+  const m = Math.hypot(vx,vy);
+  if(m>0){ vx/=m; vy/=m; }
+
+  /* Direction flip */
+  if(vx > 0) player.dir = 1;
+  if(vx < 0) player.dir = -1;
+
+  /* Move */
+  player.x += vx * player.speed;
+  player.y += vy * player.speed;
+
+  player.x = Math.max(box.x, Math.min(box.x+box.w, player.x));
+  player.y = Math.max(box.y, Math.min(box.y+box.h, player.y));
+
+  /* Bounce animation */
+  const moving = (vx!==0 || vy!==0);
+  if(moving){
+    player.bounce += player.bounceSpeed;
+  } else {
+    player.bounce *= 0.85;
+  }
+}
+
+/* Render */
+function render(){
+  /* Floor */
+  bctx.fillStyle="#e8d2ff";
+  bctx.fillRect(box.x,box.y,box.w,box.h);
+
+  for(let y=0;y<box.h;y+=6){
+    bctx.fillStyle=(y%12===0)?"#b7865b":"#a8744f";
+    bctx.fillRect(box.x,box.y+y,box.w,6);
+  }
+
+  /* Border */
+  bctx.strokeStyle="#8b5a2b";
+  bctx.lineWidth=3;
+  bctx.strokeRect(box.x+1,box.y+1,box.w-2,box.h-2);
+
+  /* Shadow under player */
+  const shadowW = 16;
+  const shadowH = 4;
+  bctx.fillStyle = "rgba(0,0,0,0.35)";
+  bctx.beginPath();
+  bctx.ellipse(player.x, player.y+10, shadowW/2, shadowH, 0, 0, Math.PI*2);
+  bctx.fill();
+
+  /* Character + bounce + flip */
+  if(spriteReady){
+    const bounceY = Math.sin(player.bounce) * 1.7;
+    const scale = 1 + Math.sin(player.bounce) * 0.06;
+
+    bctx.save();
+    bctx.translate(player.x, player.y + bounceY);
+    bctx.scale(player.dir * scale, 1/scale);
+    bctx.drawImage(sprite, -8, -12, 16, 24);
+    bctx.restore();
+  }
+
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  ctx.drawImage(buffer,0,0,V_WIDTH,V_HEIGHT);
+}
+
+/* Loop */
+function loop(){
+  update();
+  render();
+  requestAnimationFrame(loop);
+}
+loop();
+</script>
+</body>
+</html>
