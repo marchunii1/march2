@@ -1,0 +1,153 @@
+<!DOCTYPE html><html>
+<head>
+  <meta charset="UTF-8" />
+  <title>Pixel Game</title>
+  <style>
+    body { margin: 0; background: #111; overflow: hidden; }
+    canvas { background: #222; display: block; margin: 0 auto; image-rendering: pixelated; }/* Mobile thumbstick */
+#stickContainer {
+  position: fixed;
+  bottom: 20px;
+  left: 20px;
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.1);
+  touch-action: none;
+}
+#stick {
+  position: absolute;
+  top: 35px;
+  left: 35px;
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.3);
+  touch-action: none;
+}
+@media (min-width: 768px) {
+  #stickContainer { display: none; }
+}
+
+  </style>
+</head>
+<body>
+  <canvas id="game"></canvas>
+  <div id="stickContainer"><div id="stick"></div></div>  <script>
+    const canvas = document.getElementById("game");
+    const ctx = canvas.getContext("2d");
+
+    function resize() {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    }
+    window.addEventListener("resize", resize);
+    resize();
+
+    const player = {
+      x: 100,
+      y: 100,
+      w: 144,
+      h: 144,
+      speed: 3,
+      vx: 0,
+      vy: 0
+    };
+
+    // Load March sprite
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.src = "https://i.postimg.cc/0r1jycP7/Untitled228-20251123105720.png";
+
+    const keys = {};
+    window.addEventListener("keydown", e => keys[e.key] = true);
+    window.addEventListener("keyup", e => keys[e.key] = false);
+
+    const stickContainer = document.getElementById("stickContainer");
+    const stick = document.getElementById("stick");
+    let active = false;
+    let startX = 0, startY = 0;
+
+    stickContainer.addEventListener("touchstart", e => {
+      active = true;
+      const t = e.touches[0];
+      startX = t.clientX;
+      startY = t.clientY;
+    });
+
+    stickContainer.addEventListener("touchmove", e => {
+      if (!active) return;
+      const t = e.touches[0];
+      const dx = t.clientX - startX;
+      const dy = t.clientY - startY;
+
+      const dist = Math.sqrt(dx*dx + dy*dy);
+      const maxDist = 40;
+      const ratio = dist > maxDist ? maxDist / dist : 1;
+
+      const mvx = dx * ratio;
+      const mvy = dy * ratio;
+
+      stick.style.transform = `translate(${mvx}px, ${mvy}px)`;
+
+      player.vx = (mvx / maxDist) * player.speed;
+      player.vy = (mvy / maxDist) * player.speed;
+    });
+
+    stickContainer.addEventListener("touchend", () => {
+      active = false;
+      stick.style.transform = "translate(0,0)";
+      player.vx = 0;
+      player.vy = 0;
+    });
+
+    function update() {
+      if (!active) {
+        player.vx = 0;
+        player.vy = 0;
+        if (keys["w"]) player.vy = -player.speed;
+        if (keys["s"]) player.vy = player.speed;
+        if (keys["a"]) player.vx = -player.speed;
+        if (keys["d"]) player.vx = player.speed;
+      }
+
+      player.x += player.vx;
+      player.y += player.vy;
+
+      player.x = Math.max(0, Math.min(canvas.width - player.w, player.x));
+      player.y = Math.max(0, Math.min(canvas.height - player.h, player.y));
+    }
+
+    function draw() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // Bounce + squash animation
+      let bounce = 0;
+      let scaleY = 1;
+      let scaleX = 1;
+      if (player.vx !== 0 || player.vy !== 0) {
+        bounce = Math.sin(Date.now() / 120) * 6;
+        scaleY = 0.85 + Math.sin(Date.now() / 120) * 0.15;
+        scaleX = 1.1 - Math.sin(Date.now() / 120) * 0.1;
+      }
+
+      ctx.save();
+      ctx.translate(player.x + player.w/2, player.y + player.h/2 + bounce);
+      ctx.scale(scaleX, scaleY);
+      if (img.complete) {
+        ctx.drawImage(img, -player.w/2, -player.h/2, player.w, player.h);
+      } else {
+        ctx.fillStyle = "white";
+        ctx.fillRect(-player.w/2, -player.h/2, player.w, player.h);
+      }
+      ctx.restore();
+    }
+
+    function loop() {
+      update();
+      draw();
+      requestAnimationFrame(loop);
+    }
+    loop();
+  </script></body>
+</html>
